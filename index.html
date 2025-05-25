@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Falaise Motor Live</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+    }
+    #login, #spectator {
+      padding: 20px;
+    }
+    #map {
+      width: 100%;
+      height: 90vh;
+    }
+    #distance {
+      padding: 10px;
+      font-weight: bold;
+      background: #f0f0f0;
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+</head>
+<body>
+
+<div id="login">
+  <h2>Connexion</h2>
+  <input id="username" placeholder="Nom d’utilisateur" /><br>
+  <input id="password" type="password" placeholder="Mot de passe" /><br>
+  <button onclick="login()">Se connecter</button>
+  <p>ou</p>
+  <button onclick="startSpectator()">Être spectateur sans connexion</button>
+</div>
+
+<div id="pseudoForm" class="hidden">
+  <h3>Entre ton pseudo :</h3>
+  <input id="pseudoInput" placeholder="Ex: Codebreaker" />
+  <button onclick="startMap()">Continuer</button>
+</div>
+
+<div id="spectator" class="hidden">
+  <div id="map"></div>
+  <div id="distance">Distance entre les deux coureurs : 0 m</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const validUsers = {
+    bleu: "bleu",
+    noir: "noir"
+  };
+
+  let role = null;
+  let pseudo = "";
+  let map, userMarker;
+  let positions = {
+    bleu: null,
+    noir: null
+  };
+
+  function login() {
+    const user = document.getElementById("username").value.trim().toLowerCase();
+    const pass = document.getElementById("password").value.trim().toLowerCase();
+
+    if (validUsers[user] && validUsers[user] === pass) {
+      role = user;
+      document.getElementById("login").classList.add("hidden");
+      document.getElementById("pseudoForm").classList.remove("hidden");
+    } else {
+      alert("Identifiants incorrects.");
+    }
+  }
+
+  function startSpectator() {
+    role = "spectateur";
+    document.getElementById("login").classList.add("hidden");
+    document.getElementById("spectator").classList.remove("hidden");
+    initMap();
+  }
+
+  function startMap() {
+    pseudo = document.getElementById("pseudoInput").value || role.toUpperCase();
+    document.getElementById("pseudoForm").classList.add("hidden");
+    document.getElementById("spectator").classList.remove("hidden");
+    initMap();
+    startGeolocation();
+  }
+
+  function initMap() {
+    map = L.map('map').setView([48.889, -0.193], 15); // Position Falaise approx.
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+    }).addTo(map);
+  }
+
+  function startGeolocation() {
+    if (!navigator.geolocation) {
+      alert("Géolocalisation non supportée.");
+      return;
+    }
+
+    navigator.geolocation.watchPosition(
+      (pos) => {
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        updatePosition(role, latlng, pseudo);
+        broadcastPosition(role, latlng, pseudo);
+      },
+      (err) => {
+        console.error(err);
+        alert("Erreur de géolocalisation.");
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 1000
+      }
+    );
+
+    window.addEventListener("message", (event) => {
+      if (event.data.type === "position") {
+        updatePosition(event.data.role, event.data.latlng, event.data.pseudo);
+      }
+    });
+  }
+
+  function updatePosition(userRole, latlng, pseudoName) {
+    if (!map) return;
+
+    positions[userRole] = { latlng, pseudoName };
+
+    // Supprimer l’ancien marqueur
+    if (positions[userRole].marker) {
+      map.removeLayer(positions[userRole].marker);
+    }
+
+    const color = userRole === "bleu" ? "blue" : "black";
+    const marker = L.circleMarker(latlng, {
+      radius: 10,
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.8
+    }).addTo(map).bindPopup(pseudoName);
+
+    marker.openPopup();
+    positions[userRole].marker = marker;
+
+    if (positions.bleu?.latlng && positions.noir?.latlng) {
+      const dist = calculateDistance(
+        positions.bleu.latlng,
+        positions.noir.latlng
+      );
+      document.getElementById("distance").innerText =
+        `Distance entre les deux coureurs : ${dist.toFixed(1)} m`;
+    }
+  }
+
+  function broadcastPosition(role, latlng, pseudo) {
+    // Simule un échange entre navigateurs (ne marche qu’en multi-onglets)
+    window.parent.postMessage(
+      {
+        type: "position",
+        role,
+        latlng,
+        pseudo
+      },
+      "*"
+    );
+  }
+
+  function calculateDistance(latlng1, latlng2) {
+    const [lat1, lon1] = latlng1;
+    const [lat2, lon2] = latlng2;
+    const R = 6371000;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) ** 2 +
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+</script>
+</body>
+</html>
