@@ -24,10 +24,7 @@
       display: none;
     }
   </style>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
 
@@ -60,11 +57,29 @@
 
   let role = null;
   let pseudo = "";
-  let map, userMarker;
+  let map;
+
   let positions = {
     bleu: null,
     noir: null
   };
+
+  let trails = {
+    bleu: [],
+    noir: []
+  };
+
+  let trailLines = {
+    bleu: null,
+    noir: null
+  };
+
+  let markers = {
+    bleu: null,
+    noir: null
+  };
+
+  let lineBetween = null;
 
   function login() {
     const user = document.getElementById("username").value.trim().toLowerCase();
@@ -95,7 +110,7 @@
   }
 
   function initMap() {
-    map = L.map('map').setView([48.889, -0.193], 15); // Position Falaise approx.
+    map = L.map('map').setView([48.889, -0.193], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap',
     }).addTo(map);
@@ -133,24 +148,31 @@
   function updatePosition(userRole, latlng, pseudoName) {
     if (!map) return;
 
+    // Enregistrer position
     positions[userRole] = { latlng, pseudoName };
+    trails[userRole].push(latlng);
 
-    // Supprimer l’ancien marqueur
-    if (positions[userRole].marker) {
-      map.removeLayer(positions[userRole].marker);
+    // Mettre à jour trace (polyline)
+    if (trailLines[userRole]) {
+      map.removeLayer(trailLines[userRole]);
     }
+    trailLines[userRole] = L.polyline(trails[userRole], {
+      color: userRole === "bleu" ? "blue" : "black",
+      weight: 2
+    }).addTo(map);
 
-    const color = userRole === "bleu" ? "blue" : "black";
-    const marker = L.circleMarker(latlng, {
-      radius: 10,
-      color: color,
-      fillColor: color,
-      fillOpacity: 0.8
+    // Mettre à jour petit marqueur
+    if (markers[userRole]) {
+      map.removeLayer(markers[userRole]);
+    }
+    markers[userRole] = L.circleMarker(latlng, {
+      radius: 4,
+      color: userRole === "bleu" ? "blue" : "black",
+      fillColor: userRole === "bleu" ? "blue" : "black",
+      fillOpacity: 1
     }).addTo(map).bindPopup(pseudoName);
 
-    marker.openPopup();
-    positions[userRole].marker = marker;
-
+    // Si les deux positions sont présentes, afficher distance et ligne entre eux
     if (positions.bleu?.latlng && positions.noir?.latlng) {
       const dist = calculateDistance(
         positions.bleu.latlng,
@@ -158,20 +180,23 @@
       );
       document.getElementById("distance").innerText =
         `Distance entre les deux coureurs : ${dist.toFixed(1)} m`;
+
+      if (lineBetween) map.removeLayer(lineBetween);
+      lineBetween = L.polyline(
+        [positions.bleu.latlng, positions.noir.latlng],
+        { color: 'red', dashArray: '5,5', weight: 1.5 }
+      ).addTo(map);
     }
   }
 
   function broadcastPosition(role, latlng, pseudo) {
-    // Simule un échange entre navigateurs (ne marche qu’en multi-onglets)
-    window.parent.postMessage(
-      {
-        type: "position",
-        role,
-        latlng,
-        pseudo
-      },
-      "*"
-    );
+    // Envoi aux autres onglets
+    window.parent.postMessage({
+      type: "position",
+      role,
+      latlng,
+      pseudo
+    }, "*");
   }
 
   function calculateDistance(latlng1, latlng2) {
